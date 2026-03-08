@@ -1,0 +1,3 @@
+"order_id","customer_id","order_status","order_purchase_timestamp","order_approved_at","order_delivered_carrier_date","order_delivered_customer_date","order_estimated_delivery_date"
+e481f51cbdc54678b7cc49bbff2d6af7,"18955e83d337fd6b2def6b18a428ac44",delivered,2017-10-02 10:14:00,2017-02-02 11:07:15,2017-10-04 19:55:00,2017-10-10 21:25:13,2017-10-18 00:00:00
+"53cdb2fc8bc7dce0fez1e2150273451",06b8999e2fba1a1fbc88172c00ba8bc5,delivered,2018-07-24 20:41:00,2018-07-26 03:24:27,2018-08-26 14:31:00,2018-08-07 15:27:45,2018-08-13 00:00:00
