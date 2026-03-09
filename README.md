@@ -1,6 +1,6 @@
 # E-Commerce Medallion Pipeline
 
-A production-style data pipeline built with **PySpark**, **PostgreSQL**, and **Apache Airflow** that processes the [Brazilian E-Commerce dataset](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce) through a medallion architecture (Bronze → Silver → Gold).
+A data pipeline built with **PySpark**, **PostgreSQL**, and **Apache Airflow** that processes the [Brazilian E-Commerce dataset](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce) through a medallion architecture (Bronze → Silver → Gold).
 
 ---
 
