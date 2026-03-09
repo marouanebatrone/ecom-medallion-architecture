@@ -14,7 +14,7 @@ class MedallionPipeline:
 
         self.spark.sparkContext.setLogLevel("ERROR")
 
-        self.jdbc_url = "jdbc:postgresql://127.0.0.1:5433/"
+        self.jdbc_url = "jdbc:postgresql://host.docker.internal:5433/"
         self.properties = {
             "user": "postgres",
             "password": "admin",

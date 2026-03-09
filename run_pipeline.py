@@ -2,7 +2,7 @@ import sys
 import os
 from medallion_pipeline import MedallionPipeline
 
-INPUT_PATH = "data/input/unprocessed/"
+INPUT_PATH = "/opt/airflow/data/input/unprocessed/"
 FILES = [
     "olist_customers_dataset.csv",
     "olist_order_items_dataset.csv",
@@ -16,17 +16,29 @@ def get_pipeline():
 
 def ingest():
     if not any(os.path.exists(INPUT_PATH + f) for f in FILES):
-        print("No files to process. Exiting.")
+        print("No files to process. Skipping pipeline.")
+        open("/tmp/airflow_skip_pipeline", "w").close()
         sys.exit(0)
+    if os.path.exists("/tmp/airflow_skip_pipeline"):
+        os.remove("/tmp/airflow_skip_pipeline")
     get_pipeline().ingest_to_oltp()
 
 def bronze():
+    if os.path.exists("/tmp/airflow_skip_pipeline"):
+        print("No files were ingested. Skipping.")
+        sys.exit(0)
     get_pipeline().oltp_to_bronze()
 
 def silver():
+    if os.path.exists("/tmp/airflow_skip_pipeline"):
+        print("No files were ingested. Skipping.")
+        sys.exit(0)
     get_pipeline().bronze_to_silver()
 
 def gold():
+    if os.path.exists("/tmp/airflow_skip_pipeline"):
+        print("No files were ingested. Skipping.")
+        sys.exit(0)
     get_pipeline().silver_to_gold()
 
 
