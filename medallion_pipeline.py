@@ -5,7 +5,7 @@ import shutil
 
 
 class MedallionPipeline:
-
+    
     def __init__(self):
         self.spark = SparkSession.builder \
             .appName("MedallionPipeline") \
@@ -32,93 +32,70 @@ class MedallionPipeline:
             "sellers":     "olist_sellers_dataset.csv",
         }
 
-    # ---------------------------------------------------------
     # CSV → OLTP
-    # ---------------------------------------------------------
-
     def ingest_to_oltp(self):
-
+        
         # CUSTOMERS
-        df = self.spark.read.option("header", True).csv(
-            self.input_path + self.files["customers"]
-        ).withColumn("date_ingested", current_timestamp())
+        df = self.spark.read.option("header", True).csv(self.input_path + self.files["customers"]).withColumn("date_ingested", current_timestamp())
         df.write.jdbc(self.jdbc_url + "sales_oltp", "customers", "append", self.properties)
-        shutil.move(self.input_path + self.files["customers"],
-                    self.processed_path + self.files["customers"])
+        shutil.move(self.input_path + self.files["customers"], self.processed_path + self.files["customers"])
         print("customers ingested to OLTP")
 
         # ORDER ITEMS
-        df = self.spark.read.option("header", True).csv(
-            self.input_path + self.files["order_items"]
-        )
-        df = df.withColumn("order_item_id",       col("order_item_id").cast(IntegerType())) \
-               .withColumn("shipping_limit_date",  col("shipping_limit_date").cast(TimestampType())) \
-               .withColumn("price",                col("price").cast(FloatType())) \
-               .withColumn("freight_value",        col("freight_value").cast(FloatType())) \
-               .withColumn("date_ingested",        current_timestamp())
+        df = self.spark.read.option("header", True).csv(self.input_path + self.files["order_items"])
+        df = df.withColumn("order_item_id", col("order_item_id").cast(IntegerType())) \
+               .withColumn("shipping_limit_date", col("shipping_limit_date").cast(TimestampType())) \
+               .withColumn("price", col("price").cast(FloatType())) \
+               .withColumn("freight_value", col("freight_value").cast(FloatType())) \
+               .withColumn("date_ingested", current_timestamp())
         df.write.jdbc(self.jdbc_url + "sales_oltp", "order_items", "append", self.properties)
-        shutil.move(self.input_path + self.files["order_items"],
-                    self.processed_path + self.files["order_items"])
+        shutil.move(self.input_path + self.files["order_items"], self.processed_path + self.files["order_items"])
         print("order_items ingested to OLTP")
 
         # ORDERS
-        df = self.spark.read.option("header", True).csv(
-            self.input_path + self.files["orders"]
-        )
-        for c in ["order_purchase_timestamp", "order_approved_at",
-                  "order_delivered_carrier_date", "order_delivered_customer_date",
+        df = self.spark.read.option("header", True).csv(self.input_path + self.files["orders"])
+        for c in ["order_purchase_timestamp", "order_approved_at", 
+                  "order_delivered_carrier_date", 
+                  "order_delivered_customer_date", 
                   "order_estimated_delivery_date"]:
             df = df.withColumn(c, col(c).cast(TimestampType()))
         df = df.withColumn("date_ingested", current_timestamp())
         df.write.jdbc(self.jdbc_url + "sales_oltp", "orders", "append", self.properties)
-        shutil.move(self.input_path + self.files["orders"],
-                    self.processed_path + self.files["orders"])
+        shutil.move(self.input_path + self.files["orders"], self.processed_path + self.files["orders"])
         print("orders ingested to OLTP")
 
         # PRODUCTS
-        df = self.spark.read.option("header", True).csv(
-            self.input_path + self.files["products"]
-        )
-        df = df.withColumn("product_name_lenght",        col("product_name_lenght").cast(IntegerType())) \
+        df = self.spark.read.option("header", True).csv(self.input_path + self.files["products"])
+        df = df.withColumn("product_name_lenght", col("product_name_lenght").cast(IntegerType())) \
                .withColumn("product_description_lenght", col("product_description_lenght").cast(IntegerType())) \
-               .withColumn("product_photos_qty",         col("product_photos_qty").cast(IntegerType())) \
-               .withColumn("product_weight_g",           col("product_weight_g").cast(FloatType())) \
-               .withColumn("product_length_cm",          col("product_length_cm").cast(FloatType())) \
-               .withColumn("product_height_cm",          col("product_height_cm").cast(FloatType())) \
-               .withColumn("product_width_cm",           col("product_width_cm").cast(FloatType())) \
-               .withColumn("date_ingested",              current_timestamp())
+               .withColumn("product_photos_qty", col("product_photos_qty").cast(IntegerType())) \
+               .withColumn("product_weight_g", col("product_weight_g").cast(FloatType())) \
+               .withColumn("product_length_cm", col("product_length_cm").cast(FloatType())) \
+               .withColumn("product_height_cm", col("product_height_cm").cast(FloatType())) \
+               .withColumn("product_width_cm", col("product_width_cm").cast(FloatType())) \
+               .withColumn("date_ingested", current_timestamp())
         df.write.jdbc(self.jdbc_url + "sales_oltp", "products", "append", self.properties)
-        shutil.move(self.input_path + self.files["products"],
-                    self.processed_path + self.files["products"])
+        shutil.move(self.input_path + self.files["products"], self.processed_path + self.files["products"])
         print("products ingested to OLTP")
 
         # SELLERS
-        df = self.spark.read.option("header", True).csv(
-            self.input_path + self.files["sellers"]
-        ).withColumn("date_ingested", current_timestamp())
+        df = self.spark.read.option("header", True).csv(self.input_path + self.files["sellers"]).withColumn("date_ingested", current_timestamp())
         df.write.jdbc(self.jdbc_url + "sales_oltp", "sellers", "append", self.properties)
-        shutil.move(self.input_path + self.files["sellers"],
-                    self.processed_path + self.files["sellers"])
+        shutil.move(self.input_path + self.files["sellers"], self.processed_path + self.files["sellers"])
         print("sellers ingested to OLTP")
 
-    # ---------------------------------------------------------
-    # OLTP → BRONZE (incremental)
-    # ---------------------------------------------------------
-
+    # OLTP → BRONZE
     def oltp_to_bronze(self):
         for table in self.files.keys():
             df = self.spark.read.jdbc(
-                url=self.jdbc_url + "sales_oltp",
+                url=self.jdbc_url + "sales_oltp", 
                 table=f"(SELECT * FROM {table} WHERE date_ingested::date = CURRENT_DATE) as t",
                 properties=self.properties
             )
             df.write.jdbc(self.jdbc_url + "sales_bronze", table, "append", self.properties)
             print(f"{table} loaded to Bronze")
 
-    # ---------------------------------------------------------
     # BRONZE → SILVER
-    # ---------------------------------------------------------
-
     def bronze_to_silver(self):
 
         # CUSTOMERS
@@ -203,9 +180,7 @@ class MedallionPipeline:
 
         print("Bronze → Silver completed")
 
-    # ---------------------------------------------------------
     # SILVER → GOLD
-    # ---------------------------------------------------------
 
     def silver_to_gold(self):
 

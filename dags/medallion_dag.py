@@ -1,32 +1,8 @@
 from airflow import DAG
-from airflow.operators.python import PythonOperator
+from airflow.operators.bash import BashOperator
 from datetime import datetime
-import os
 
-
-def run_pipeline():
-    from medallion_pipeline import MedallionPipeline
-
-    input_path = "/opt/airflow/data/input/unprocessed/"
-    files = [
-        "olist_customers_dataset.csv",
-        "olist_order_items_dataset.csv",
-        "olist_orders_dataset.csv",
-        "olist_products_dataset.csv",
-        "olist_sellers_dataset.csv"
-    ]
-
-    if not any(os.path.exists(input_path + f) for f in files):
-        print("No files to process in unprocessed folder. Exiting.")
-        return
-
-    pipeline = MedallionPipeline()
-    pipeline.ingest_to_oltp()
-    pipeline.oltp_to_bronze()
-    pipeline.bronze_to_silver()
-    pipeline.silver_to_gold()
-    print("Medallion pipeline completed successfully.")
-
+PIPELINE_CMD = "cd /opt/airflow && python run_pipeline.py"
 
 with DAG(
     dag_id="medallion_pipeline_dag",
@@ -37,7 +13,24 @@ with DAG(
     tags=["medallion", "etl"]
 ) as dag:
 
-    run_pipeline_task = PythonOperator(
-        task_id="run_medallion_pipeline",
-        python_callable=run_pipeline
+    ingest_to_oltp = BashOperator(
+        task_id="ingest_to_oltp",
+        bash_command=f"{PIPELINE_CMD} ingest"
     )
+
+    oltp_to_bronze = BashOperator(
+        task_id="oltp_to_bronze",
+        bash_command=f"{PIPELINE_CMD} bronze"
+    )
+
+    bronze_to_silver = BashOperator(
+        task_id="bronze_to_silver",
+        bash_command=f"{PIPELINE_CMD} silver"
+    )
+
+    silver_to_gold = BashOperator(
+        task_id="silver_to_gold",
+        bash_command=f"{PIPELINE_CMD} gold"
+    )
+
+    ingest_to_oltp >> oltp_to_bronze >> bronze_to_silver >> silver_to_gold

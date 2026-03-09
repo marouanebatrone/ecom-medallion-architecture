@@ -1,10 +1,9 @@
-from medallion_pipeline import MedallionPipeline
+import sys
 import os
+from medallion_pipeline import MedallionPipeline
 
-pipeline = MedallionPipeline()
-
-input_path = "data/input/unprocessed/"
-files = [
+INPUT_PATH = "data/input/unprocessed/"
+FILES = [
     "olist_customers_dataset.csv",
     "olist_order_items_dataset.csv",
     "olist_orders_dataset.csv",
@@ -12,10 +11,35 @@ files = [
     "olist_sellers_dataset.csv"
 ]
 
-if not any(os.path.exists(input_path + f) for f in files):
-    print("No files to process in unprocessed folder. Exiting.")
-else:
-    pipeline.ingest_to_oltp()
-    pipeline.oltp_to_bronze()
-    pipeline.bronze_to_silver()
-    pipeline.silver_to_gold()
+def get_pipeline():
+    return MedallionPipeline()
+
+def ingest():
+    if not any(os.path.exists(INPUT_PATH + f) for f in FILES):
+        print("No files to process. Exiting.")
+        sys.exit(0)
+    get_pipeline().ingest_to_oltp()
+
+def bronze():
+    get_pipeline().oltp_to_bronze()
+
+def silver():
+    get_pipeline().bronze_to_silver()
+
+def gold():
+    get_pipeline().silver_to_gold()
+
+
+if __name__ == "__main__":
+    commands = {
+        "ingest": ingest,
+        "bronze": bronze,
+        "silver": silver,
+        "gold":   gold,
+    }
+
+    if len(sys.argv) < 2 or sys.argv[1] not in commands:
+        print(f"Usage: python run_pipeline.py [{' | '.join(commands)}]")
+        sys.exit(1)
+
+    commands[sys.argv[1]]()
