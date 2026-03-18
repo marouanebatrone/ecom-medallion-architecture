@@ -12,4 +12,4 @@ ENV PATH="${JAVA_HOME}/bin:${PATH}"
 
 USER airflow
 
-RUN pip install --no-cache-dir pyspark==3.3.2
+RUN pip install --no-cache-dir pyspark==3.3.2 psycopg2-binary pandas pyarrow
