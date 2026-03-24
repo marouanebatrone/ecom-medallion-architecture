@@ -7,14 +7,23 @@ import shutil
 class MedallionPipeline:
     
     def __init__(self):
+        
+        openlineage_package = "io.openlineage:openlineage-spark_2.12:1.13.1"
+        postgres_package = "org.postgresql:postgresql:42.7.3"
+
         self.spark = SparkSession.builder \
             .appName("MedallionPipeline") \
-            .config("spark.jars.packages", "org.postgresql:postgresql:42.7.3") \
+            .config("spark.jars.packages", f"{postgres_package},{openlineage_package}") \
+            .config("spark.extraListeners", "io.openlineage.spark.agent.OpenLineageSparkListener") \
+            .config("spark.openlineage.transport.type", "http") \
+            .config("spark.openlineage.transport.url", "http://qupid-watchpipe.qupid.clusterdiali.me") \
+            .config("spark.openlineage.transport.endpoint", "/api/v1/lineage") \
+            .config("spark.openlineage.namespace", "spark-medallion-pipeline") \
             .getOrCreate()
 
         self.spark.sparkContext.setLogLevel("ERROR")
 
-        self.jdbc_url = "jdbc:postgresql://host.docker.internal:5433/"
+        self.jdbc_url = "jdbc:postgresql://host.docker.internal:5433/sales_data_platform"
         self.properties = {
             "user": "postgres",
             "password": "admin",
@@ -37,7 +46,7 @@ class MedallionPipeline:
         
         # CUSTOMERS
         df = self.spark.read.option("header", True).csv(self.input_path + self.files["customers"]).withColumn("date_ingested", current_timestamp())
-        df.write.jdbc(self.jdbc_url + "sales_oltp", "customers", "append", self.properties)
+        df.write.jdbc(self.jdbc_url, "oltp.customers", "append", self.properties)
         shutil.move(self.input_path + self.files["customers"], self.processed_path + self.files["customers"])
         print("customers ingested to OLTP")
 
@@ -48,7 +57,7 @@ class MedallionPipeline:
                .withColumn("price", col("price").cast(FloatType())) \
                .withColumn("freight_value", col("freight_value").cast(FloatType())) \
                .withColumn("date_ingested", current_timestamp())
-        df.write.jdbc(self.jdbc_url + "sales_oltp", "order_items", "append", self.properties)
+        df.write.jdbc(self.jdbc_url, "oltp.order_items", "append", self.properties)
         shutil.move(self.input_path + self.files["order_items"], self.processed_path + self.files["order_items"])
         print("order_items ingested to OLTP")
 
@@ -60,7 +69,7 @@ class MedallionPipeline:
                   "order_estimated_delivery_date"]:
             df = df.withColumn(c, col(c).cast(TimestampType()))
         df = df.withColumn("date_ingested", current_timestamp())
-        df.write.jdbc(self.jdbc_url + "sales_oltp", "orders", "append", self.properties)
+        df.write.jdbc(self.jdbc_url, "oltp.orders", "append", self.properties)
         shutil.move(self.input_path + self.files["orders"], self.processed_path + self.files["orders"])
         print("orders ingested to OLTP")
 
@@ -74,34 +83,38 @@ class MedallionPipeline:
                .withColumn("product_height_cm", col("product_height_cm").cast(FloatType())) \
                .withColumn("product_width_cm", col("product_width_cm").cast(FloatType())) \
                .withColumn("date_ingested", current_timestamp())
-        df.write.jdbc(self.jdbc_url + "sales_oltp", "products", "append", self.properties)
+        df.write.jdbc(self.jdbc_url, "oltp.products", "append", self.properties)
         shutil.move(self.input_path + self.files["products"], self.processed_path + self.files["products"])
         print("products ingested to OLTP")
 
         # SELLERS
         df = self.spark.read.option("header", True).csv(self.input_path + self.files["sellers"]).withColumn("date_ingested", current_timestamp())
-        df.write.jdbc(self.jdbc_url + "sales_oltp", "sellers", "append", self.properties)
+        df.write.jdbc(self.jdbc_url, "oltp.sellers", "append", self.properties)
         shutil.move(self.input_path + self.files["sellers"], self.processed_path + self.files["sellers"])
         print("sellers ingested to OLTP")
+        
+        self.spark.stop()
 
     # OLTP → BRONZE
     def oltp_to_bronze(self):
         for table in self.files.keys():
             df = self.spark.read.jdbc(
-                url=self.jdbc_url + "sales_oltp", 
-                table=f"(SELECT * FROM {table} WHERE date_ingested::date = CURRENT_DATE) as t",
+                url=self.jdbc_url, 
+                table=f"(SELECT * FROM {"oltp." + table} WHERE date_ingested::date = CURRENT_DATE) as t",
                 properties=self.properties
             )
-            df.write.jdbc(self.jdbc_url + "sales_bronze", table, "append", self.properties)
+            df.write.jdbc(self.jdbc_url, "bronze." + table, "append", self.properties)
             print(f"{table} loaded to Bronze")
+            
+        self.spark.stop()
 
     # BRONZE → SILVER
     def bronze_to_silver(self):
 
         # CUSTOMERS
         customers = self.spark.read.jdbc(
-            self.jdbc_url + "sales_bronze",
-            "(SELECT * FROM customers WHERE date_ingested::date = CURRENT_DATE) as t",
+            self.jdbc_url,
+            "(SELECT * FROM bronze.customers WHERE date_ingested::date = CURRENT_DATE) as t",
             properties=self.properties
         )
         customers.select(
@@ -111,13 +124,13 @@ class MedallionPipeline:
             col("customer_state"),
             col("date_ingested")
         ).dropDuplicates(["customer_id"]) \
-         .write.jdbc(self.jdbc_url + "sales_silver", "customers", "append", self.properties)
+         .write.jdbc(self.jdbc_url, "silver.customers", "append", self.properties)
         print("customers → Silver")
 
         # ORDERS
         orders = self.spark.read.jdbc(
-            self.jdbc_url + "sales_bronze",
-            "(SELECT * FROM orders WHERE date_ingested::date = CURRENT_DATE) as t",
+            self.jdbc_url,
+            "(SELECT * FROM bronze.orders WHERE date_ingested::date = CURRENT_DATE) as t",
             properties=self.properties
         )
         orders.select(
@@ -125,13 +138,13 @@ class MedallionPipeline:
             col("customer_id"),
             col("order_purchase_timestamp").cast(TimestampType()).alias("purchase_timestamp"),
             col("date_ingested")
-        ).write.jdbc(self.jdbc_url + "sales_silver", "orders", "append", self.properties)
+        ).write.jdbc(self.jdbc_url, "silver.orders", "append", self.properties)
         print("orders → Silver")
 
         # ORDER ITEMS
         order_items = self.spark.read.jdbc(
-            self.jdbc_url + "sales_bronze",
-            "(SELECT * FROM order_items WHERE date_ingested::date = CURRENT_DATE) as t",
+            self.jdbc_url,
+            "(SELECT * FROM bronze.order_items WHERE date_ingested::date = CURRENT_DATE) as t",
             properties=self.properties
         )
         order_items.select(
@@ -141,13 +154,13 @@ class MedallionPipeline:
             col("price").cast(FloatType()),
             col("freight_value").cast(FloatType()),
             col("date_ingested")
-        ).write.jdbc(self.jdbc_url + "sales_silver", "order_items", "append", self.properties)
+        ).write.jdbc(self.jdbc_url, "silver.order_items", "append", self.properties)
         print("order_items → Silver")
 
         # PRODUCTS
         products = self.spark.read.jdbc(
-            self.jdbc_url + "sales_bronze",
-            "(SELECT * FROM products WHERE date_ingested::date = CURRENT_DATE) as t",
+            self.jdbc_url,
+            "(SELECT * FROM bronze.products WHERE date_ingested::date = CURRENT_DATE) as t",
             properties=self.properties
         )
         products.select(
@@ -159,13 +172,13 @@ class MedallionPipeline:
             col("product_width_cm").cast(FloatType()),
             col("date_ingested")
         ).dropDuplicates(["product_id"]) \
-         .write.jdbc(self.jdbc_url + "sales_silver", "products", "append", self.properties)
+         .write.jdbc(self.jdbc_url, "silver.products", "append", self.properties)
         print("products → Silver")
 
         # SELLERS
         sellers = self.spark.read.jdbc(
-            self.jdbc_url + "sales_bronze",
-            "(SELECT * FROM sellers WHERE date_ingested::date = CURRENT_DATE) as t",
+            self.jdbc_url,
+            "(SELECT * FROM bronze.sellers WHERE date_ingested::date = CURRENT_DATE) as t",
             properties=self.properties
         )
         sellers.select(
@@ -175,38 +188,41 @@ class MedallionPipeline:
             col("seller_state"),
             col("date_ingested")
         ).dropDuplicates(["seller_id"]) \
-         .write.jdbc(self.jdbc_url + "sales_silver", "sellers", "append", self.properties)
+         .write.jdbc(self.jdbc_url, "silver.sellers", "append", self.properties)
         print("sellers → Silver")
 
         print("Bronze → Silver completed")
+        
+        
+        self.spark.stop()
 
     # SILVER → GOLD
 
     def silver_to_gold(self):
 
         orders = self.spark.read.jdbc(
-            self.jdbc_url + "sales_silver",
-            "(SELECT * FROM orders WHERE date_ingested::date = CURRENT_DATE) as t",
+            self.jdbc_url,
+            "(SELECT * FROM silver.orders WHERE date_ingested::date = CURRENT_DATE) as t",
             properties=self.properties
         )
         order_items = self.spark.read.jdbc(
-            self.jdbc_url + "sales_silver",
-            "(SELECT * FROM order_items WHERE date_ingested::date = CURRENT_DATE) as t",
+            self.jdbc_url,
+            "(SELECT * FROM silver.order_items WHERE date_ingested::date = CURRENT_DATE) as t",
             properties=self.properties
         )
         customers = self.spark.read.jdbc(
-            self.jdbc_url + "sales_silver",
-            "(SELECT * FROM customers WHERE date_ingested::date = CURRENT_DATE) as t",
+            self.jdbc_url,
+            "(SELECT * FROM silver.customers WHERE date_ingested::date = CURRENT_DATE) as t",
             properties=self.properties
         )
         products = self.spark.read.jdbc(
-            self.jdbc_url + "sales_silver",
-            "(SELECT * FROM products WHERE date_ingested::date = CURRENT_DATE) as t",
+            self.jdbc_url,
+            "(SELECT * FROM silver.products WHERE date_ingested::date = CURRENT_DATE) as t",
             properties=self.properties
         )
         sellers = self.spark.read.jdbc(
-            self.jdbc_url + "sales_silver",
-            "(SELECT * FROM sellers WHERE date_ingested::date = CURRENT_DATE) as t",
+            self.jdbc_url,
+            "(SELECT * FROM silver.sellers WHERE date_ingested::date = CURRENT_DATE) as t",
             properties=self.properties
         )
 
@@ -221,16 +237,18 @@ class MedallionPipeline:
             col("freight_value"),
             orders["date_ingested"]
         )
-        fact_sales.write.jdbc(self.jdbc_url + "sales_gold", "fact_sales", "append", self.properties)
+        fact_sales.write.jdbc(self.jdbc_url, "gold.fact_sales", "append", self.properties)
         print("fact_sales → Gold")
 
-        customers.write.jdbc(self.jdbc_url + "sales_gold", "dim_customers", "append", self.properties)
+        customers.write.jdbc(self.jdbc_url, "gold.dim_customers", "append", self.properties)
         print("dim_customers → Gold")
 
-        products.write.jdbc(self.jdbc_url + "sales_gold", "dim_products", "append", self.properties)
+        products.write.jdbc(self.jdbc_url, "gold.dim_products", "append", self.properties)
         print("dim_products → Gold")
 
-        sellers.write.jdbc(self.jdbc_url + "sales_gold", "dim_sellers", "append", self.properties)
+        sellers.write.jdbc(self.jdbc_url, "gold.dim_sellers", "append", self.properties)
         print("dim_sellers → Gold")
 
         print("Silver → Gold completed")
+        
+        self.spark.stop()

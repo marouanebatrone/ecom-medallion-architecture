@@ -1,12 +1,9 @@
 from airflow import DAG
-from airflow.providers.standard.operators.bash import BashOperator
+from airflow.operators.bash import BashOperator
 from datetime import datetime, timedelta
 
 default_args = {
     'owner': 'qupid',
-    'depends_on_past': False,
-    'email_on_failure': False,
-    'email_on_retry': False,
 }
 
 with DAG(
