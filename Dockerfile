@@ -17,5 +17,6 @@ RUN pip install --no-cache-dir \
     psycopg2-binary \
     requests \
     apache-airflow-providers-openlineage \
-    openlineage-python \
-    pymongo
+    openlineage-python
+
+RUN pip install --no-cache-dir pymongo
