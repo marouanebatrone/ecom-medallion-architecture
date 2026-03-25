@@ -2,7 +2,7 @@ from airflow import DAG
 from airflow.operators.bash import BashOperator
 from datetime import datetime
 
-PIPELINE_CMD = "cd /opt/airflow && python run_pipeline.py"
+PIPELINE_CMD = "cd /opt/airflow/scripts/medallionPipeline/ && python run_pipeline.py"
 
 with DAG(
     dag_id="medallion_pipeline_dag",

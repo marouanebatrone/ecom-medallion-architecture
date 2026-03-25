@@ -27,6 +27,15 @@ class IncidentContextBuilder:
         query = "SELECT incident_id, observer_id, run_id, status, detected_at FROM incidents WHERE DATE(created_at) = CURRENT_DATE AND status = 'fail';"
         return self._query_db(self.obs_params, query)
 
+    def get_data_sample(self, schema, table, limit=5):
+        """Fetches a few rows from the failing resource to provide visual context."""
+        try:
+            query = f'SELECT * FROM "{schema}"."{table}" LIMIT %s;'
+            return self._query_db(self.target_params, query, (limit,))
+        except Exception as e:
+            print(f"Warning: Could not fetch sample for {schema}.{table}: {e}")
+            return []
+
     def get_lineage_directions(self, schema, table):
         urn = quote_plus(f"dataset:{self.namespace}:{schema}.{table}")
         try:
@@ -45,8 +54,11 @@ class IncidentContextBuilder:
                     
                     node = nodes[curr]
                     if node.get('type') == 'DATASET' and curr != f"dataset:{self.namespace}:{schema}.{table}":
-                        name = node['data']['name'].split('.')
-                        results.add((name[0], name[1]) if len(name) == 2 else ('public', name[0]))
+                        name_parts = node['data']['name'].split('.')
+                        if len(name_parts) >= 2:
+                            results.add((name_parts[-2], name_parts[-1]))
+                        else:
+                            results.add(('public', name_parts[0]))
                     
                     for edge in node.get(edge_type, []):
                         queue.append(edge.get('origin') or edge.get('destination'))
@@ -64,9 +76,10 @@ class IncidentContextBuilder:
         details = self._query_db(self.obs_params, obs_detail_query, (incident['observer_id'], incident['run_id']), False)
         if not details: return None
 
-        # 2. History & Lineage
         history_query = "SELECT execution_time, metric_value, status FROM observer_runs WHERE observer_id = %s ORDER BY execution_time DESC LIMIT 3;"
         up_tables, down_tables = self.get_lineage_directions(details['schema_name'], details['table_name'])
+
+        sample_data = self.get_data_sample(details['schema_name'], details['table_name'])
 
         def enrich(tables):
             return [{
@@ -80,7 +93,8 @@ class IncidentContextBuilder:
             "metadata": incident,
             "resource": {
                 "config": details,
-                "history": self._query_db(self.obs_params, history_query, (incident['observer_id'],))
+                "history": self._query_db(self.obs_params, history_query, (incident['observer_id'],)),
+                "sample_data": sample_data  # <-- New Field Added Here
             },
             "lineage": {
                 "upstreams": enrich(up_tables),
@@ -90,13 +104,17 @@ class IncidentContextBuilder:
 
     def run(self):
         incidents = self.get_todays_incidents()
-        print(f"Processing {len(incidents)} incidents...")
+        print(f"Found {len(incidents)} incidents to process.")
         
         for inc in incidents:
             payload = self.build_context(inc)
             if payload:
-                self.collection.update_one({"incident_id": inc['incident_id']},{"$set": payload},upsert=True)
-                print(f"Context stored for Incident {inc['incident_id']}")
+                self.collection.update_one(
+                    {"incident_id": inc['incident_id']},
+                    {"$set": payload},
+                    upsert=True
+                )
+                print(f"Context (including data sample) stored for Incident {inc['incident_id']}")
 
 if __name__ == "__main__":
     DB_CONFIGS = {
