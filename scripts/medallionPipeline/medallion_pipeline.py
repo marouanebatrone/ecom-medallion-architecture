@@ -30,8 +30,8 @@ class MedallionPipeline:
             "driver": "org.postgresql.Driver"
         }
 
-        self.input_path    = "data/input/unprocessed/"
-        self.processed_path = "data/input/processed/"
+        self.input_path     = "/opt/airflow/data/input/unprocessed/"
+        self.processed_path = "/opt/airflow/data/input/processed/"
 
         self.files = {
             "customers":   "olist_customers_dataset.csv",

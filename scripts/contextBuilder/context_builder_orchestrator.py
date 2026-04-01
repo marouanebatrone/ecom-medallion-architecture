@@ -31,8 +31,8 @@ class ContextBuilderOrchestrator:
         if not details: return None
 
         history = self.incidents.fetch_historical_metrics(incident['observer_id'])
-        sample = self.samples.get_sample_rows(details['schema_name'], details['table_name'])
-        up_tables, down_tables = self.lineage.get_upstream_and_downstream_tables(details['schema_name'], details['table_name'])
+        sample = self.samples.get_sample_rows(details['schema_name'], details['table_name'], limit=3)
+        rich_lineage = self.lineage.get_rich_lineage_context(details['schema_name'], details['table_name'])
 
         return {
             "incident_id": incident['incident_id'],
@@ -44,10 +44,30 @@ class ContextBuilderOrchestrator:
                 "sample_data": sample
             },
             "lineage": {
-                "upstreams": self._enrich_lineage_list(up_tables),
-                "downstreams": self._enrich_lineage_list(down_tables)
+                "upstreams": self._enrich_upstream_lineage(rich_lineage['upstreams'], details),
+                "downstreams": self._enrich_lineage_list(rich_lineage['downstreams']),
+                "column_lineage": rich_lineage['column_level'],
+                "facets": rich_lineage['facets']
             }
         }
+
+    def _enrich_upstream_lineage(self, table_tuples, failing_config):
+        enriched = []
+        for s, t in table_tuples:
+            observers = self.incidents.fetch_table_observers(s, t)
+            
+            matching_obs_id = self.incidents.find_matching_observer_id(s, t, failing_config)
+            
+            obs_history = []
+            if matching_obs_id:
+                obs_history = self.incidents.fetch_historical_metrics(matching_obs_id, limit=3)
+
+            enriched.append({
+                "table": f"{s}.{t}",
+                "observers": observers,
+                "observer_history": obs_history
+            })
+        return enriched
 
     def _enrich_lineage_list(self, table_tuples):
         return [{

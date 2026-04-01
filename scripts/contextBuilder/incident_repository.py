@@ -1,3 +1,5 @@
+import json
+
 class IncidentRepository:
     def __init__(self, postgres_client):
         self.db = postgres_client
@@ -27,6 +29,35 @@ class IncidentRepository:
             ORDER BY execution_time DESC LIMIT %s;
         """
         return self.db.execute_query(query, (observer_id, limit))
+    
+    def find_matching_observer_id(self, schema, table, source_config):
+        query = """
+            SELECT observer_id 
+            FROM observers 
+            WHERE schema_name = %s 
+              AND table_name = %s 
+              AND observer_type = %s 
+              AND resource_type = %s 
+              AND db_name = %s 
+              AND (column_name = %s OR (column_name IS NULL AND %s IS NULL))
+              AND condition_config::jsonb = %s::jsonb
+            LIMIT 1;
+        """
+        config_json = json.dumps(source_config.get('condition_config'))
+        
+        params = (
+            schema,
+            table,
+            source_config.get('observer_type'),
+            source_config.get('resource_type'),
+            source_config.get('db_name'),
+            source_config.get('column_name'),
+            source_config.get('column_name'),
+            config_json
+        )
+        
+        result = self.db.execute_query(query, params, fetch_all=False)
+        return result['observer_id'] if result else None
     
     def fetch_table_observers(self, schema, table):
         query = "SELECT observer_name, condition_config FROM observers WHERE schema_name=%s AND table_name=%s"
