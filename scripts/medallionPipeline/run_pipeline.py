@@ -8,38 +8,44 @@ FILES = [
     "olist_order_items_dataset.csv",
     "olist_orders_dataset.csv",
     "olist_products_dataset.csv",
-    "olist_sellers_dataset.csv"
+    "olist_sellers_dataset.csv",
 ]
+SKIP_FILE = "/tmp/airflow_skip_pipeline"
 
-def get_pipeline():
-    return MedallionPipeline()
 
 def ingest():
     if not any(os.path.exists(INPUT_PATH + f) for f in FILES):
         print("No files to process. Skipping pipeline.")
-        open("/tmp/airflow_skip_pipeline", "w").close()
+        open(SKIP_FILE, "w").close()
         sys.exit(0)
-    if os.path.exists("/tmp/airflow_skip_pipeline"):
-        os.remove("/tmp/airflow_skip_pipeline")
-    get_pipeline().ingest_to_oltp()
+    if os.path.exists(SKIP_FILE):
+        os.remove(SKIP_FILE)
+    with MedallionPipeline() as pipeline:
+        pipeline.ingest_to_oltp()
+
 
 def bronze():
-    if os.path.exists("/tmp/airflow_skip_pipeline"):
+    if os.path.exists(SKIP_FILE):
         print("No files were ingested. Skipping.")
         sys.exit(0)
-    get_pipeline().oltp_to_bronze()
+    with MedallionPipeline() as pipeline:
+        pipeline.oltp_to_bronze()
+
 
 def silver():
-    if os.path.exists("/tmp/airflow_skip_pipeline"):
+    if os.path.exists(SKIP_FILE):
         print("No files were ingested. Skipping.")
         sys.exit(0)
-    get_pipeline().bronze_to_silver()
+    with MedallionPipeline() as pipeline:
+        pipeline.bronze_to_silver()
+
 
 def gold():
-    if os.path.exists("/tmp/airflow_skip_pipeline"):
+    if os.path.exists(SKIP_FILE):
         print("No files were ingested. Skipping.")
         sys.exit(0)
-    get_pipeline().silver_to_gold()
+    with MedallionPipeline() as pipeline:
+        pipeline.silver_to_gold()
 
 
 if __name__ == "__main__":
@@ -49,9 +55,7 @@ if __name__ == "__main__":
         "silver": silver,
         "gold":   gold,
     }
-
     if len(sys.argv) < 2 or sys.argv[1] not in commands:
         print(f"Usage: python run_pipeline.py [{' | '.join(commands)}]")
         sys.exit(1)
-
     commands[sys.argv[1]]()
