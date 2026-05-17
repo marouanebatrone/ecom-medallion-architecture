@@ -1,5 +1,4 @@
 logs/*
 dags/__pycache__
 scripts/__pycache__
-
 .env
